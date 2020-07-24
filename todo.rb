@@ -1,5 +1,5 @@
 require "sinatra"
-require "sinatra/reloader"
+require "sinatra/reloader" if development?
 require "sinatra/content_for"
 require "tilt/erubis"
 
@@ -10,6 +10,38 @@ end
 
 before do
   session[:lists] ||= []
+end
+
+helpers do
+  def list_complete?(list)
+    todos_count(list) > 0 && todos_remaining_count(list) == 0
+  end
+
+  def list_class(list)
+    "complete" if list_complete?(list)
+  end
+
+  def todos_count(list)
+    list[:todos].size
+  end
+
+  def todos_remaining_count(list)
+    list[:todos].select {|todo| !todo[:completed]}.size
+  end
+
+  def sort_lists(lists, &block)
+    complete_lists, incomplete_lists = lists.partition {|list| list_complete?(list)}
+
+    incomplete_lists.each {|list| yield list, lists.index(list)}
+    complete_lists.each {|list| yield list, lists.index(list)}
+  end
+
+  def sort_todos(todos, &block)
+    complete_todos, incomplete_todos = todos.partition {|todo| todo[:completed]}
+
+    incomplete_todos.each {|todo| yield todo, todos.index(todo)}
+    complete_todos.each {|todo| yield todo, todos.index(todo)}
+  end
 end
 
 get "/" do
@@ -122,11 +154,27 @@ post "/lists/:list_id/todos/:id/destroy" do
 end
 
 # Mark a todo as completed
-post "/lists/:list_id/todos/:id/check" do
+post "/lists/:list_id/todos/:id" do
   @list_id = params[:list_id].to_i
   @list = session[:lists][@list_id]
-  @todo_id = params[:id].to_i
-  @status = @list[:todos][@todo_id][:completed]
-  @status = params[:completed]
+
+  todo_id = params[:id].to_i
+  is_completed = params[:completed] == "true"
+  @list[:todos][todo_id][:completed] = is_completed
+
+  session[:success] = "The todo has been updated."
+  redirect "/lists/#{@list_id}"
+end
+
+# Mark all todos as completed
+post "/lists/:id/complete_all" do
+  @list_id = params[:id].to_i
+  @list = session[:lists][@list_id]
+
+  @list[:todos].each do |todo|
+    todo[:completed] = true
+  end
+
+  session[:success] = "The todos have been updated."
   redirect "/lists/#{@list_id}"
 end
